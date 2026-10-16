@@ -71,3 +71,6 @@ jobs:
           set -- --param "number=$NUMBER" --param "outdir=$RUNNER_TEMP/work"
           if [ -n "$MODE" ]; then set -- "$@" --param "mode=$MODE"; fi
           node ../toolkit/bin/repo-agents.mjs run triage.apply "$@"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: "triage-${{ inputs.number }}-audit", path: "${{ runner.temp }}/work/audit.json", if-no-files-found: ignore, retention-days: 90 }

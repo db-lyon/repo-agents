@@ -144,6 +144,15 @@ export function parseDiff(text) {
   return files;
 }
 
+/** parseDiff's Map as plain JSON, so it can pass between flow steps. null stays null. */
+export function diffToJson(lines) {
+  return lines ? Object.fromEntries([...lines].map(([p, set]) => [p, [...set]])) : null;
+}
+
+export function diffFromJson(obj) {
+  return obj ? new Map(Object.entries(obj).map(([p, list]) => [p, new Set(list)])) : null;
+}
+
 /** gh pr checks --json name,bucket: merge directly only when every check passed. */
 export function checksVerdict(checks) {
   const list = Array.isArray(checks) ? checks : [];

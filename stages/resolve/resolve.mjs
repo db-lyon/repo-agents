@@ -6,7 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { READ_TOOLS, WRITE_TOOLS } from "../../lib/agent.mjs";
-import { fill, matchesAny, sanitize, sanitizeLong } from "../../lib/text.mjs";
+import { fill, matchesAny, neutralizeClosers, sanitize, sanitizeLong } from "../../lib/text.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const PROMPT_PATH = path.join(HERE, "prompt.md");
@@ -138,7 +138,7 @@ function fence(text) {
 /** PR body: the agent's text, then the verification this workflow ran, then the issue reference. */
 export function prBody({ decision, verifyResults, cfg, n }) {
   const out = decision?.output ?? {};
-  const parts = [sanitizeLong(out.pr_body)];
+  const parts = [neutralizeClosers(sanitizeLong(out.pr_body))];
   parts.push("## Verification");
   if (!verifyResults.length) parts.push("No verify commands are configured.");
   for (const v of verifyResults) parts.push(`- \`${v.command}\`: ${v.ok ? "pass" : "fail"}${v.setup ? " (setup)" : ""}`);

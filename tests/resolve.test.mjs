@@ -231,9 +231,12 @@ describe("flows", () => {
   it("plans resolve.decide and resolve.apply", async () => {
     const { runner } = createRunner();
     const decide = await runner.run({ flowName: "resolve.decide", params: { number: 7, outdir: "x" }, plan: true });
-    expect(decide.steps.map((s) => s.name)).toEqual(["resolve.prepare", "resolve.setup", "claude_code", "resolve.capture", "report"]);
+    expect(decide.steps.map((s) => s.name)).toEqual(["resolve.prepare", "resolve.setup", "claude_code", "resolve.capture"]);
     const apply = await runner.run({ flowName: "resolve.apply", params: { number: 7, outdir: "x" }, plan: true });
-    expect(apply.steps.map((s) => s.name)).toEqual(["resolve.plan", "issue.apply_plan", "resolve.publish", "issue.apply_plan", "report"]);
+    expect(apply.steps.map((s) => s.name)).toEqual([
+      "resolve.check", "resolve.apply_patch", "resolve.verify", "resolve.plan", "issue.apply_plan",
+      "resolve.commit", "resolve.push", "resolve.open_pr", "issue.apply_plan",
+    ]);
   });
 });
 

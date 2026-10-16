@@ -3,8 +3,10 @@
 # project root and the PR head in ../pr; review.apply runs in the write job.
 
 tasks:
+  claude_code: { class_path: claude_code, description: Run a headless Claude Code agent }
   review.prepare: { class_path: review.prepare, description: Decide whether to review and build the prompt }
-  review.plan: { class_path: review.plan, description: Verify the decision and plan the review }
+  review.facts: { class_path: review.facts, description: "Read the decision, the live PR and its diff" }
+  review.plan: { class_path: review.plan, description: Plan the review and the merge }
   review.post: { class_path: review.post, description: Post the review }
   review.merge:
     class_path: review.merge
@@ -15,11 +17,14 @@ tasks:
 flows:
   review.decide:
     description: Read the PR, its diff, checks and code, decide
+    checks:
+      - { when: "!${settings.review.enabled}", action: skip, message: review is disabled in settings }
     steps:
       10: { task: review.prepare }
       20:
         task: claude_code
         when: ${steps.10.go}
+        ignore_failure: true
         options:
           prompt_file: stages/review/prompt.md
           vars: ${steps.10.vars}
@@ -29,27 +34,32 @@ flows:
           model: ${settings.review.model}
           max_turns: ${settings.review.max_turns}
           max_budget_usd: ${settings.review.max_budget_usd}
-      90:
-        task: report
-        options:
-          text: ${steps.10.summary}
 
   review.apply:
     description: Verify the decision, post the review, merge when allowed
+    checks:
+      - { when: "!${settings.review.enabled}", action: skip, message: review is disabled in settings }
     steps:
-      10: { task: review.plan }
+      10: { task: review.facts }
       20:
-        task: report
+        task: review.plan
+        when: ${steps.10.go}
         options:
-          text: ${steps.10.summary}
+          agent: ${steps.10.agent}
+          pr: ${steps.10.pr}
+          diff: ${steps.10.diff}
+          reviewed_sha: ${steps.10.reviewed_sha}
       30:
         task: review.post
-        when: ${steps.10.post}
+        when: ${steps.20.post}
         options:
-          plan: ${steps.10.plan}
-          sha: ${steps.10.sha}
+          plan: ${steps.20.plan}
+          sha: ${steps.20.sha}
+          confidence: ${steps.20.confidence}
       40:
         task: review.merge
-        when: ${steps.10.merge}
+        when: ${steps.20.merge}
         options:
-          sha: ${steps.10.sha}
+          sha: ${steps.20.sha}
+          pr: ${steps.10.pr}
+          confidence: ${steps.20.confidence}

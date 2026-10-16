@@ -1,0 +1,131 @@
+# Settings defaults. A project's .github/repo-agents.yml overrides any key
+# under settings:, and a key that is not declared here fails the load with a
+# did-you-mean, so a typo never silently does nothing.
+
+settings:
+  project:
+    name: ""
+    # What this repository owns, in plain sentences. Agents use it to decide
+    # whether an issue belongs here.
+    description: ""
+    # Files the agents read first for house rules (relative to the repo root).
+    context_files: []
+    # Words and characters public text must not contain. The prose guard
+    # denies any public write that contains one.
+    banned_phrases: []
+    voice: "Plain, short sentences. No greetings, apologies or thanks. No em dashes."
+
+  ci:
+    # The project's CI workflow file. Dispatched on agent branches and on the
+    # release commit when pushes are made with github.token, which cannot
+    # trigger push events. It needs a workflow_dispatch trigger.
+    workflow: ""
+
+  # Trackers an issue can move to. key is what the agent names; repo means a
+  # transfer, label means it stays here under that label.
+  routing: []
+
+  labels:
+    triaged: triaged
+    needs_human: needs-triage
+    needs_info: needs-info
+    fixed_pending: fixed-pending-release
+    resolve: resolve
+    in_progress: agent-working
+    duplicate: duplicate
+    invalid: invalid
+    limitation: limitation
+    # Labels that are never area labels.
+    reserved: [bug, enhancement, documentation, question, good first issue, help wanted, wontfix, planned, merge-blocked]
+
+  # Ceilings the rate guard enforces on every apply run.
+  limits:
+    writes_per_run: 40
+
+  triage:
+    enabled: true
+    mode: act # act | propose | dry-run
+    model: claude-sonnet-5-5
+    max_budget_usd: 2
+    max_turns: 40
+    skip_maintainers: true
+    # Accepted bugs and requests get the resolve label automatically.
+    auto_resolve: false
+    auto_resolve_kinds: [bug]
+
+  resolve:
+    enabled: true
+    model: claude-opus-5-5
+    max_budget_usd: 8
+    max_turns: 120
+    # Commands run before the agent starts (install dependencies).
+    setup: []
+    # Commands that must pass for the fix to count. The agent may run them;
+    # the workflow runs them again itself before opening the PR.
+    verify: []
+    # Extra commands the agent may run, as Claude Code permission patterns.
+    allow_commands: []
+    # Paths the agent must not change. A diff touching them is rejected.
+    protected_paths: [.github/workflows/**]
+    # Paths CI cannot verify (native code, engine builds). A PR touching them
+    # gets the label below and is never auto-merged.
+    unverifiable_paths: []
+    unverifiable_label: needs-native-verification
+    branch_prefix: agents/issue-
+    # How the PR body refers to the issue. "Refs" keeps it open on merge.
+    issue_ref: Refs
+    # When verification fails: draft-pr keeps the work, comment drops it.
+    on_failure: draft-pr
+    commit_style: conventional
+
+  review:
+    enabled: true
+    model: claude-sonnet-5-5
+    max_budget_usd: 3
+    max_turns: 60
+    # Which PRs merge themselves once approved and green: none | agents | all
+    auto_merge: agents
+    merge_method: squash
+    # Paths that always need a human approval, whatever the verdict.
+    human_paths: []
+
+  closeout:
+    enabled: true
+    # merge: close issues when the fixing PR merges. release: label them
+    # fixed_pending on merge and close when a stable release contains the fix.
+    close_on: release
+    announce_prereleases: true
+    prerelease_install_hint: ""
+
+  release:
+    enabled: false
+    model: claude-sonnet-5-5
+    max_budget_usd: 2
+    max_turns: 40
+    # prerelease: X.Y.Z-<preid>.N  patch: X.Y.Z+1
+    bump: prerelease
+    preid: beta
+    # Where the version lives. package.json is read and written natively;
+    # anything else needs version_command.
+    version_file: package.json
+    version_command: ""
+    # Release only when there is something to ship: at least this many commits
+    # since the last release, ignoring chore/docs/ci/test commits.
+    min_changes: 1
+    # Commands that must pass on the release commit before anything ships.
+    gates: []
+    # Runner labels for the gate job, e.g. [self-hosted, ue].
+    gate_runner: [ubuntu-latest]
+    # Workflow names whose latest run on the default branch must be green.
+    required_workflows: []
+    notes:
+      style_doc: ""
+      # Frontmatter with a headline array at the top of the draft body.
+      headline: false
+      headline_validate: ""
+      # Link prefixes release notes may keep, beyond github.com.
+      allow_links: []
+    # draft-and-bump: create a draft release and push the version bump; the
+    # project's own CI publishes. publish: tag and publish the release here.
+    publish: publish
+    bump_commit_message: "chore(release): {version}"

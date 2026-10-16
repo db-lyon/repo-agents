@@ -1,23 +1,37 @@
 # Resolve. Params: number, outdir.
 # resolve.decide runs in the read-only job; resolve.apply in the write job.
+# resolve.apply rolls back on failure: a branch it pushed is deleted again when
+# a later step fails, unless a PR is open on it.
 
 tasks:
   claude_code: { class_path: claude_code, description: Run a headless Claude Code agent }
-  report: { class_path: report, description: Write to the job summary }
   issue.apply_plan: { class_path: issue.apply_plan, description: Apply planned writes to an issue }
-  resolve.prepare: { class_path: resolve.prepare, description: Build the resolve prompt, schema and commands }
+  resolve.prepare: { class_path: resolve.prepare, description: "Build the resolve prompt, schema and commands" }
   resolve.setup:
     class_path: resolve.setup
     description: Run the setup commands and snapshot untracked files
     options:
       commands: ${settings.resolve.setup}
   resolve.capture: { class_path: resolve.capture, description: Write the agent's changes to fix.patch }
-  resolve.plan: { class_path: resolve.plan, description: Apply the patch, verify, and plan the writes }
-  resolve.publish: { class_path: resolve.publish, description: Commit, push and open or update the PR }
+  resolve.check: { class_path: resolve.check, description: Read the decision and the patch }
+  resolve.apply_patch: { class_path: resolve.apply_patch, description: Apply the patch on a fresh branch }
+  resolve.verify:
+    class_path: resolve.verify
+    description: Run setup and verify on the patched tree
+    options:
+      setup: ${settings.resolve.setup}
+      verify: ${settings.resolve.verify}
+  resolve.plan: { class_path: resolve.plan, description: "Decide between a PR, a draft PR and a comment" }
+  resolve.commit: { class_path: resolve.commit, description: Commit the fix locally }
+  resolve.push: { class_path: resolve.push, description: Push the fix branch }
+  resolve.delete_branch: { class_path: resolve.delete_branch, description: Delete a pushed branch with no open PR }
+  resolve.open_pr: { class_path: resolve.open_pr, description: Open or update the PR }
 
 flows:
   resolve.decide:
     description: Read the issue and the code, implement a fix, capture the diff
+    checks:
+      - { when: "!${settings.resolve.enabled}", action: skip, message: resolve is disabled in settings }
     steps:
       10: { task: resolve.prepare }
       20:
@@ -26,6 +40,7 @@ flows:
       30:
         task: claude_code
         when: ${steps.20.go}
+        ignore_failure: true
         options:
           prompt_file: stages/resolve/prompt.md
           vars: ${steps.10.vars}
@@ -40,31 +55,56 @@ flows:
         when: ${steps.20.go}
         options:
           snapshot: ${steps.20.untracked}
-      90:
-        task: report
-        options:
-          text: ${steps.10.summary}${steps.20.summary}${steps.40.summary}
 
   resolve.apply:
     description: Verify the fix and open a pull request, or explain on the issue
+    rollback_on_failure: true
+    checks:
+      - { when: "!${settings.resolve.enabled}", action: skip, message: resolve is disabled in settings }
     steps:
-      10: { task: resolve.plan }
+      10: { task: resolve.check }
       20:
-        task: issue.apply_plan
-        when: ${steps.10.comment}
+        task: resolve.apply_patch
+        when: ${steps.10.go}
         options:
-          plan: ${steps.10.issue_plan}
+          patch: ${steps.10.patch}
       30:
-        task: resolve.publish
-        when: ${steps.10.pr}
-        options:
-          publish: ${steps.10.publish}
+        task: resolve.verify
+        when: ${steps.20.applied}
       40:
+        task: resolve.plan
+        options:
+          decision: ${steps.10.decision}
+          issue: ${steps.10.issue}
+          patch_files: ${steps.10.files}
+          applied: ${steps.20.applied}
+          staged_files: ${steps.20.files}
+          patch_error: ${steps.20.error}
+          verify_results: ${steps.30.results}
+      50:
         task: issue.apply_plan
-        when: ${steps.10.pr}
+        when: ${steps.40.comment}
         options:
-          plan: ${steps.30.issue_plan}
+          stage: resolve
+          plan: ${steps.40.issue_plan}
+      60:
+        task: resolve.commit
+        when: ${steps.40.pr}
+        options:
+          publish: ${steps.40.publish}
+      70:
+        task: resolve.push
+        when: ${steps.40.pr}
+        options:
+          publish: ${steps.40.publish}
+      80:
+        task: resolve.open_pr
+        when: ${steps.40.pr}
+        options:
+          publish: ${steps.40.publish}
       90:
-        task: report
+        task: issue.apply_plan
+        when: ${steps.40.pr}
         options:
-          text: ${steps.10.summary}${steps.30.summary}
+          stage: resolve
+          plan: ${steps.80.issue_plan}

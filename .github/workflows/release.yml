@@ -128,3 +128,6 @@ jobs:
           node ../toolkit/bin/repo-agents.mjs run release.publish
           --param "version=$VERSION" --param "prev_tag=$PREV_TAG"
           --param "default_branch=$DEFAULT_BRANCH" --param "outdir=$RUNNER_TEMP/work"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: "release-${{ needs.plan.outputs.version }}-audit", path: "${{ runner.temp }}/work/audit.json", if-no-files-found: ignore, retention-days: 90 }

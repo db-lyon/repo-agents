@@ -56,10 +56,13 @@ export default class ClaudeCodeTask extends BaseTask {
       transcript: path.join(dir, `${path.parse(o.out).name}.transcript.json`),
     });
     fs.writeFileSync(outFile, JSON.stringify(result, null, 2));
-    this.logger.info(`agent ${result.output ? "returned a decision" : `failed: ${result.error}`}; cost ${result.cost ?? "n/a"}, ${result.turns ?? "?"} turns`);
-    // A missing decision is not a flow failure: the apply job turns it into a
-    // needs-human outcome, which is the right public result.
-    return { success: true, data: { ...result, file: outFile } };
+    const cost = `Cost ${result.cost == null ? "n/a" : `$${Number(result.cost).toFixed(3)}`}, ${result.turns ?? "?"} turns.`;
+    const data = { ...result, file: outFile, summary: `Agent ${o.model}: ${result.output ? "returned a decision" : "returned no decision"}. ${cost}` };
+    // A missing decision fails the step. Flows mark this step ignore_failure:
+    // the decision file still records the error, and the apply job turns it
+    // into a needs-human outcome, which is the right public result.
+    if (!result.output) return { success: false, error: new Error(`agent returned no decision: ${result.error ?? "unknown error"}`), data };
+    return { success: true, data };
   }
 }
 

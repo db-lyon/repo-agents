@@ -1,25 +1,30 @@
-# Triage. Params: number, outdir.
+# Triage. Params: number, outdir; mode on apply overrides settings.triage.mode.
 # triage.decide runs in the read-only job; triage.apply in the write job.
+# Steps are numbered with gaps so a project overlay can insert one (15) or
+# switch one off (task: None).
 
 tasks:
   claude_code: { class_path: claude_code, description: Run a headless Claude Code agent }
-  report: { class_path: report, description: Write to the job summary }
   issue.apply_plan: { class_path: issue.apply_plan, description: Apply planned writes to an issue }
   triage.prepare: { class_path: triage.prepare, description: Build the triage prompt and schema }
+  triage.facts: { class_path: triage.facts, description: Verify the decision's claims against GitHub and git }
   triage.plan:
     class_path: triage.plan
-    description: Verify the decision and plan the writes
+    description: Plan the writes from the decision and the facts
     options:
       mode: ${settings.triage.mode}
 
 flows:
   triage.decide:
     description: Read the issue, search, read the code, decide
+    checks:
+      - { when: "!${settings.triage.enabled}", action: skip, message: triage is disabled in settings }
     steps:
       10: { task: triage.prepare }
       20:
         task: claude_code
         when: ${steps.10.go}
+        ignore_failure: true
         options:
           prompt_file: stages/triage/prompt.md
           vars: ${steps.10.vars}
@@ -31,14 +36,21 @@ flows:
 
   triage.apply:
     description: Verify the decision and apply it
+    checks:
+      - { when: "!${settings.triage.enabled}", action: skip, message: triage is disabled in settings }
     steps:
-      10: { task: triage.plan }
+      10: { task: triage.facts }
       20:
+        task: triage.plan
+        when: ${steps.10.go}
+        options:
+          agent: ${steps.10.agent}
+          facts: ${steps.10.facts}
+          context: ${steps.10.context}
+      30:
         task: issue.apply_plan
-        when: ${steps.10.write}
+        when: ${steps.20.write}
         options:
-          plan: ${steps.10.plan}
-      90:
-        task: report
-        options:
-          text: ${steps.10.summary}
+          stage: triage
+          plan: ${steps.20.plan}
+          mode: ${steps.20.mode}

@@ -24,14 +24,47 @@ An agent never holds a token that can write. Each stage has two jobs:
 
 Text an agent wrote is passed through `lib/text.mjs` `sanitize` before it is posted.
 
-## Script conventions
+## Engine: flowkit
 
-- Scripts are ESM `.mjs`, run as `node toolkit/stages/<stage>/<script>.mjs <subcommand> [args]` with the working directory set to `project/`.
-- Config: `loadConfig()` from `lib/config.mjs` (reads `REPO_AGENTS_CONFIG` or `.github/repo-agents.yml` in cwd).
-- Repo: `repoSlug()` from `lib/github.mjs` (`GITHUB_REPOSITORY`).
+Every job runs one flowkit flow: `node toolkit/bin/repo-agents.mjs run <stage>.<half> --param number=N --param outdir=$RUNNER_TEMP/work`, working directory `project/`. `repo-agents preflight <flow>` evaluates a flow's checks without running anything; `run <flow> --plan` lists its steps.
+
+- **Config.** `flows/*.yml` are the base layer, including `flows/settings.yml`, which holds every settings default. The project's `.github/repo-agents.yml` overlays it, then `.github/repo-agents.<REPO_AGENTS_ENV>.yml` and `.github/repo-agents.local.yml`. Loading is strict: an unknown key anywhere, settings included, fails with a did-you-mean. `lib/config.mjs` `validate` checks the values.
+- **Flows.** Each stage half is a flow. Steps are numbered with gaps (10, 20, 30), so an overlay can insert a step (15) or switch one off (`task: None`). Steps hand data on through `${steps.N.key}`; `strictStepReferences` rejects a reference to an unknown or later step.
+- **Tasks.** Fact gathering, planning and writing are separate steps: `<stage>.facts` (or `resolve.check`) reads the decision and the live state, `<stage>.plan` is pure apart from the summary, and the write steps perform the writes. A project can replace or wrap any one of them. Pure rules stay in `stages/<stage>/*.mjs` under unit test.
+- **Checks.** A disabled stage (`settings.<stage>.enabled: false`) is a flow-level `skip` check, so both halves skip with the reason in the summary. `!` or `not` negates a `when:` or check reference.
+- **Agent failure.** `claude_code` fails when the agent returns no decision. Decide flows mark it `ignore_failure: true`, so the decision file still records the error and the apply job turns it into a needs-human outcome. `release.notes` does not, so a release without notes stops.
+- **Rollback.** `resolve.apply` and `release.publish` set `rollback_on_failure`. A branch `resolve.push` created is deleted again when a later step fails, unless a PR is open on it. A draft from `release.draft` is deleted again when the push after it fails.
+- **Hooks.** Tasks return `data.summary` (job summary markdown) and `data.outputs` (step outputs); `lib/hooks.mjs` writes both, reports failed steps and fired checks, and writes the audit trail. No task writes the summary or outputs itself.
+
+## The write seam
+
+Every GitHub write goes through `ctx.writer.write(op, invoke)` (`lib/write.mjs`), which runs flowkit's guard pipeline around `invoke`. The op describes the write: `{ stage, kind, target, text, branch, files, reason, event, confidence, releasedIn, pr, mode }`. The planners decide what to do; the guards decide whether it may be done, so a planner bug cannot become an unsafe write. A denied write throws `WriteDenied` and never runs.
+
+| Guard | Denies |
+|---|---|
+| `mode` | everything in `dry-run`; close, transfer and merge in `propose` |
+| `rate` | more than `limits.writes_per_run` writes in one run |
+| `confidence` | a triage or review close, transfer, merge or approval below high confidence |
+| `close_policy` | a close that is not a duplicate or not-planned, unless it cites a fix in a published stable release |
+| `push_targets` | a push to the default branch from any stage but release; a resolve push or branch delete outside `resolve.branch_prefix` |
+| `paths` | a resolve push touching `resolve.protected_paths` |
+| `merge_policy` | a merge of a draft, of a PR outside `review.auto_merge`, or of one touching `review.human_paths` or unverifiable paths |
+| `prose` | public text with a banned character or `project.banned_phrases`, and closing keywords (`Fixes #N`) in commits and PRs when `closeout.close_on` is `release`. Fenced code is not checked. |
+
+A project adds a guard as a task named `guard.<name>.<phase>` in its config, `phase` being `before` or `after`, optionally scoped: `beforeClose`, `beforePush`, `beforeMerge`, `beforeRelease`, `beforePublicText`. The task receives `{ op }`; returning `success: false` or throwing denies the write.
+
+```yaml
+tasks:
+  guard.native_proof.beforeMerge: { class_path: ./scripts/native-proof-guard.mjs }
+```
+
+Every write, allowed, denied or failed, is recorded. The apply job writes the record to the job summary and uploads `audit.json` as `<stage>-<n>-audit`.
+
+## Code conventions
+
+- ESM `.mjs`. Repo: `repoSlug()` from `lib/github.mjs` (`GITHUB_REPOSITORY`). `lib/github.mjs` holds raw `gh` and `git` calls; a write function from it is called only inside `writer.write`.
 - Agent: `runAgent({ prompt, model, schema, tools, commands, maxTurns, maxBudgetUsd, cwd, transcript })`. `REPO_AGENTS_FIXTURE` swaps the model for a JSON file, which is how wiring tests run without an API key.
-- Every pure decision (validation, planning, version math, text) is an exported function with a vitest test in `tests/`. The `main()` at the bottom only gathers facts and performs writes. Guard it with `if (import.meta.url === pathToFileURL(process.argv[1]).href) main()`.
-- Outputs: `setOutput`, and a human summary through `summary()` (the job summary).
+- Every pure decision (validation, planning, version math, text) is an exported function with a vitest test in `tests/`. `tests/flows.test.mjs` runs the real flows with fact tasks stubbed and `createRunner({ perform })` recording writes, guards included.
 - Prompts live in `stages/<stage>/prompt.md` with `{{placeholders}}` filled by `fill()`. Schemas in `stages/<stage>/schema.json` (or built in code when they depend on config).
 
 ## Reusable workflow conventions

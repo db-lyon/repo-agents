@@ -1,5 +1,7 @@
-// Triage tasks. triage.prepare builds the prompt variables and the schema;
-// triage.plan verifies the agent's decision and plans the writes.
+// Triage tasks. decide job: triage.prepare builds the prompt variables and
+// the schema. apply job: triage.facts reads the decision and verifies its
+// claims against GitHub and git; triage.plan turns decision and facts into
+// writes. The rules live in stages/triage.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -11,13 +13,14 @@ import { areaLabels, candidateTable, decisionSchema, duplicateQueries, planActio
 export class TriagePrepare extends BaseTask {
   static description = "Decide whether to triage, and build the triage prompt variables and schema";
   static optionsSchema = { number: { type: "integer", required: true } };
+  static outputs = { go: { type: "boolean" }, schema: { type: "object" }, vars: { type: "object" } };
   get taskName() { return "triage.prepare"; }
 
   async execute() {
     const { settings } = this.ctx;
     const repo = repoSlug();
     const issue = getIssue(repo, this.options.number);
-    const go = settings.triage.enabled && shouldTriage(process.env.GITHUB_EVENT_NAME, issue, settings);
+    const go = shouldTriage(process.env.GITHUB_EVENT_NAME, issue, settings);
     const labels = repoLabels(repo);
     const seen = new Map();
     for (const q of go ? duplicateQueries(issue.title, issue.body) : []) {
@@ -29,6 +32,7 @@ export class TriagePrepare extends BaseTask {
       success: true,
       data: {
         go,
+        summary: go ? "" : `### Triage #${this.options.number}: skipped, not a candidate for triage.`,
         schema: decisionSchema(settings),
         vars: {
           NUMBER: this.options.number,
@@ -54,17 +58,21 @@ export function fixFacts(sha, published, defaultRef = "origin/HEAD") {
   return { sha: full, short: full.slice(0, 8), onDefault, releasedIn: firstStable, prerelease: firstStable ? null : firstPre };
 }
 
-export class TriagePlan extends BaseTask {
-  static description = "Verify the triage decision against GitHub and git, and plan the writes";
+export class TriageFacts extends BaseTask {
+  static description = "Read the triage decision and check each claim it makes against GitHub and git";
   static optionsSchema = {
     number: { type: "integer", required: true },
     outdir: { type: "string", default: "" },
-    mode: { type: "string", enum: ["act", "propose", "dry-run"], required: true },
   };
-  get taskName() { return "triage.plan"; }
+  static outputs = {
+    go: { type: "boolean", description: "The issue is open and a candidate for triage" },
+    agent: { type: "object", description: "The agent result: output, cost, turns, error" },
+    facts: { type: "object", description: "issue, duplicate, fix, canTransfer" },
+    context: { type: "object", description: "repoLabels, latestRelease" },
+  };
+  get taskName() { return "triage.facts"; }
 
   async execute() {
-    const { settings, root } = this.ctx;
     const repo = repoSlug();
     const n = this.options.number;
     const file = path.join(workDir(this.options.outdir), "decision.json");
@@ -73,31 +81,66 @@ export class TriagePlan extends BaseTask {
 
     const issue = getIssue(repo, n);
     if (!issue || issue.state !== "open" || issue.locked || issue.isPullRequest) {
-      return { success: true, data: { write: false, summary: `#${n}: skipped, the issue is no longer open.` } };
+      return { success: true, data: { go: false, summary: `### Triage #${n}: skipped, the issue is no longer open.` } };
+    }
+    // The decide job skipped it (a maintainer's issue): no decision is expected, so nothing to flag.
+    if (!shouldTriage(process.env.GITHUB_EVENT_NAME, issue, this.ctx.settings)) {
+      return { success: true, data: { go: false, summary: `### Triage #${n}: skipped, not a candidate for triage.` } };
     }
     const published = releases(repo);
     tryRun("git", ["remote", "set-head", "origin", "--auto"]);
-    const facts = {
-      issue,
-      duplicate: decision?.duplicateOf ? getIssue(repo, decision.duplicateOf) : null,
-      fix: decision?.fixCommit ? fixFacts(decision.fixCommit, published) : null,
-      canTransfer: Boolean(process.env.AGENTS_TOKEN),
+    return {
+      success: true,
+      data: {
+        go: true,
+        agent,
+        facts: {
+          issue,
+          duplicate: decision?.duplicateOf ? getIssue(repo, decision.duplicateOf) : null,
+          fix: decision?.fixCommit ? fixFacts(decision.fixCommit, published) : null,
+          canTransfer: Boolean(process.env.AGENTS_TOKEN),
+        },
+        context: { repoLabels: [...repoLabels(repo)], latestRelease: published.find((r) => r.isLatest)?.tagName ?? null },
+      },
     };
-    const ctx = { settings, repoLabels: repoLabels(repo), latestRelease: published.find((r) => r.isLatest)?.tagName ?? null };
-    const resolved = resolveDecision(decision, facts, settings, this.options.mode);
-    const plan = planActions(resolved, decision, ctx);
+  }
+}
+
+export class TriagePlan extends BaseTask {
+  static description = "Turn the decision and the verified facts into the writes to make";
+  static optionsSchema = {
+    number: { type: "integer", required: true },
+    agent: { type: "object", default: {} },
+    facts: { type: "object", required: true },
+    context: { type: "object", required: true },
+    mode: { type: "string", enum: ["act", "propose", "dry-run"], required: true },
+  };
+  static outputs = { write: { type: "boolean" }, plan: { type: "object" }, mode: { type: "string" } };
+  get taskName() { return "triage.plan"; }
+
+  async execute() {
+    const { settings } = this.ctx;
+    const { number: n, agent, facts, context, mode } = this.options;
+    const decision = agent.output ?? null;
+    const ctx = { settings, repoLabels: new Set(context.repoLabels ?? []), latestRelease: context.latestRelease ?? null };
+    const resolved = resolveDecision(decision, facts, settings, mode);
+    const plan = {
+      ...planActions(resolved, decision, ctx),
+      confidence: decision?.confidence,
+      releasedIn: resolved.fix?.releasedIn ?? null,
+    };
     const summary = [
       `### Triage #${n}: ${resolved.outcome}${resolved.proposed && resolved.proposed !== resolved.outcome ? ` (proposed ${resolved.proposed})` : ""}`,
       "",
-      `Mode \`${this.options.mode}\`. Confidence ${decision?.confidence ?? "n/a"}. Cost ${agent.cost == null ? "n/a" : `$${Number(agent.cost).toFixed(3)}`}, ${agent.turns ?? "?"} turns.${agent.error ? ` Agent error: ${agent.error}` : ""}`,
+      `Mode \`${mode}\`. Confidence ${decision?.confidence ?? "n/a"}. Cost ${agent.cost == null ? "n/a" : `$${Number(agent.cost).toFixed(3)}`}, ${agent.turns ?? "?"} turns.${agent.error ? ` Agent error: ${agent.error}` : ""}`,
       resolved.reason ? `\nNot applied as proposed: ${resolved.reason}.` : "",
       "",
       "```json",
       JSON.stringify({ decision, plan }, null, 2),
       "```",
     ].join("\n");
-    return { success: true, data: { write: this.options.mode !== "dry-run", plan, summary } };
+    return { success: true, data: { write: mode !== "dry-run", plan, mode, summary } };
   }
 }
 
-export const TASKS = { "triage.prepare": TriagePrepare, "triage.plan": TriagePlan };
+export const TASKS = { "triage.prepare": TriagePrepare, "triage.facts": TriageFacts, "triage.plan": TriagePlan };
