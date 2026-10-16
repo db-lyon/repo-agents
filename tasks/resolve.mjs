@@ -39,8 +39,10 @@ export function runCommands(commands, { cwd, setup = false, timeoutMs = 30 * 60 
   return results;
 }
 
-function untrackedFiles(cwd) {
-  return run("git", ["ls-files", "--others", "--exclude-standard", "-z"], { cwd }).split("\0").filter(Boolean);
+/** Untracked files git add may stage. A nested checkout (an embedded repository, such as review's pr/) is never one. */
+export function untrackedFiles(cwd) {
+  return run("git", ["ls-files", "--others", "--exclude-standard", "-z"], { cwd }).split("\0").filter(Boolean)
+    .filter((f) => !(f.endsWith("/") && fs.existsSync(path.join(cwd, f, ".git"))));
 }
 
 /** The token pushes and PRs use. PRs opened with github.token start no workflows, so the agents token wins. */

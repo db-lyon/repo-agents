@@ -6,6 +6,7 @@ import { BaseTask } from "@db-lyon/flowkit";
 import { READ_COMMANDS, runAgent } from "../lib/agent.mjs";
 import { contextText, workDir } from "../lib/config.mjs";
 import { fill } from "../lib/text.mjs";
+import { envRepo } from "../lib/github.mjs";
 
 export default class ClaudeCodeTask extends BaseTask {
   static description = "Run a headless Claude Code agent with a fixed tool list and a JSON schema";
@@ -31,15 +32,17 @@ export default class ClaudeCodeTask extends BaseTask {
     const o = this.options;
     const { settings, root, toolkitRoot } = this.ctx;
     const template = fs.readFileSync(path.join(toolkitRoot, o.prompt_file), "utf8");
+    const cwd = o.cwd ? path.resolve(root, o.cwd) : path.resolve(root);
     const prompt = fill(template, {
-      REPO: process.env.GITHUB_REPOSITORY ?? "",
+      REPO: envRepo(),
       PROJECT: settings.project.name,
       PROJECT_DESCRIPTION: settings.project.description,
       VOICE: settings.project.voice,
-      CONTEXT: contextText(settings, root),
+      // House rules come from the trusted root, never from an agent working
+      // directory nested inside it (review's PR checkout at pr/).
+      CONTEXT: contextText(settings, root, undefined, cwd === path.resolve(root) ? [] : [cwd]),
       ...o.vars,
     });
-    const cwd = o.cwd ? path.resolve(root, o.cwd) : root;
     if (!fs.existsSync(cwd)) throw new Error(`agent working directory ${cwd} does not exist`);
     const dir = workDir(o.outdir);
     fs.mkdirSync(dir, { recursive: true });

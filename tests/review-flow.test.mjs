@@ -27,7 +27,7 @@ describe("review flows", () => {
     const steps = config.flows["review.apply"].steps;
     expect(steps["30"].task).toBe("review.post");
     expect(steps["40"].task).toBe("review.merge");
-    expect(config.flows["review.decide"].steps["20"].options.cwd).toBe("../pr");
+    expect(config.flows["review.decide"].steps["20"].options.cwd).toBe("${steps.10.pr_dir}");
   });
 
   it("merges with the configured method", () => {

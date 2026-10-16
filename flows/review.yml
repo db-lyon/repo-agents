@@ -1,6 +1,8 @@
-# Review. Params: number, outdir.
+# Review. Params: number, outdir; pr_dir on decide (default ../pr).
 # review.decide runs in the read-only job with the base checkout as the
-# project root and the PR head in ../pr; review.apply runs in the write job.
+# project root and the PR head at pr_dir, resolved against the root (the review
+# action checks it out at pr/ inside the root, which is then kept out of git
+# and of the house rules); review.apply runs in the write job.
 
 tasks:
   claude_code: { class_path: claude_code, description: Run a headless Claude Code agent }
@@ -29,7 +31,7 @@ flows:
           prompt_file: stages/review/prompt.md
           vars: ${steps.10.vars}
           schema: ${steps.10.schema}
-          cwd: ../pr
+          cwd: ${steps.10.pr_dir}
           tools: [Read, Grep, Glob]
           model: ${settings.review.model}
           max_turns: ${settings.review.max_turns}

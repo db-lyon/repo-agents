@@ -6,7 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { BaseTask } from "@db-lyon/flowkit";
-import { workDir } from "../lib/config.mjs";
+import { isInside, workDir } from "../lib/config.mjs";
 import { ghJson, repoSlug, runKeep, tryRun } from "../lib/github.mjs";
 import {
   alreadyReviewed, checksVerdict, diffFromJson, diffToJson, loadSchema, mergeArgs, normalizePr, parseDiff, planReview,
@@ -30,6 +30,36 @@ export function prFacts(repo, n) {
   return normalizePr(raw, pages.flat());
 }
 
+/**
+ * Where the PR head is checked out. A relative pr_dir resolves against the
+ * project root. It must be its own tree: not the root, not a parent of it.
+ */
+export function resolvePrDir(root, prDir) {
+  const dir = path.resolve(root, prDir);
+  if (isInside(root, dir)) return { dir, error: `the PR checkout ${dir} is the project root or contains it` };
+  if (!fs.existsSync(dir)) return { dir, error: `no PR checkout at ${dir}` };
+  return { dir, error: null };
+}
+
+/**
+ * A PR checkout inside the project root (the review action's pr/) goes into
+ * the root's .git/info/exclude, so no git add or status in the root picks
+ * it up. Returns the excluded path, or null when it is outside the root.
+ */
+export function excludeFromRoot(root, dir) {
+  if (!isInside(dir, root)) return null;
+  const rel = `/${path.relative(path.resolve(root), dir).split(path.sep).join("/")}/`;
+  const gitDir = tryRun("git", ["rev-parse", "--absolute-git-dir"], { cwd: root });
+  if (!gitDir) return null;
+  const file = path.join(gitDir, "info", "exclude");
+  const lines = fs.existsSync(file) ? fs.readFileSync(file, "utf8").split(/\r?\n/) : [];
+  if (!lines.includes(rel)) {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.appendFileSync(file, `${lines.length && lines.at(-1) !== "" ? "\n" : ""}${rel}\n`);
+  }
+  return rel;
+}
+
 export class ReviewPrepare extends BaseTask {
   static description = "Decide whether to review, scrub the PR checkout, and build the prompt variables and schema";
   static optionsSchema = {
@@ -38,7 +68,7 @@ export class ReviewPrepare extends BaseTask {
     pr_dir: { type: "string", default: "../pr", description: "PR head checkout, relative to the project root" },
     dispatched: { type: "boolean", default: false },
   };
-  static outputs = { go: { type: "boolean" }, schema: { type: "object" }, vars: { type: "object" } };
+  static outputs = { go: { type: "boolean" }, schema: { type: "object" }, vars: { type: "object" }, pr_dir: { type: "string", description: "The PR checkout, absolute; the agent's working directory" } };
   get taskName() { return "review.prepare"; }
 
   async execute() {
@@ -46,10 +76,11 @@ export class ReviewPrepare extends BaseTask {
     const repo = repoSlug();
     const n = this.options.number;
     const pr = prFacts(repo, n);
-    const prDir = path.resolve(root, this.options.pr_dir);
+    const { dir: prDir, error } = resolvePrDir(root, this.options.pr_dir);
     let skip = !pr ? "PR not found" : shouldSkip(pr, { dispatched: dispatched(this.options.dispatched) });
     // The PR checkout must be its own tree; scrubbing the trusted root would be wrong.
-    if (!skip && (prDir === path.resolve(root) || !fs.existsSync(prDir))) skip = `no PR checkout at ${prDir}`;
+    if (!skip && error) skip = error;
+    if (!skip) excludeFromRoot(root, prDir);
 
     let removed = [];
     let sha = pr?.headSha ?? null;
@@ -67,6 +98,7 @@ export class ReviewPrepare extends BaseTask {
       success: true,
       data: {
         go: !skip,
+        pr_dir: prDir,
         summary: text,
         schema: loadSchema(),
         vars: pr ? promptVars({ number: n, pr }) : {},
