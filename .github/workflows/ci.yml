@@ -1,0 +1,48 @@
+# Engine CI: unit tests, a plan of every flow under every example config,
+# and actionlint over the workflows.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run
+      - name: Plan every flow under every example config
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for config in examples/*.yml; do
+            echo "::group::$config"
+            export REPO_AGENTS_CONFIG="$config"
+            node cli.mjs settings > /dev/null
+            for flow in $(node cli.mjs flows | awk '{print $1}'); do
+              node cli.mjs run "$flow" --plan
+            done
+            echo "::endgroup::"
+          done
+
+  actionlint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker://rhysd/actionlint:1.7.7
+        with:
+          args: -color
