@@ -8,13 +8,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { logText } from "../lib/engine.mjs";
+import { SPEC_FLOWS } from "./spec-flows.mjs";
 
 const CLI = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "cli.mjs");
 
-export const SPEC_FLOWS = [
-  "triage.decide", "triage.apply", "resolve.decide", "resolve.apply", "review.decide", "review.apply",
-  "release.plan", "release.gate", "release.notes", "release.publish",
-];
 
 function projectDir(files = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ra-cli-"));

@@ -1,0 +1,19 @@
+# A generic project's .github/repo-agents.yml. Everything not set here keeps
+# the defaults in flows/settings.yml: issues close when the fixing PR merges,
+# release is off, agent PRs merge themselves once approved and green.
+
+settings:
+  project:
+    name: example-app
+    description: >-
+      example-app is a Node web service: the HTTP API in src/, its tests in
+      test/, and the docs in docs/.
+    context_files: [README.md, CONTRIBUTING.md]
+
+  resolve:
+    setup: [npm ci]
+    verify: [npm test]
+
+  review:
+    # Nothing merges without a human until the agents have earned it.
+    auto_merge: none

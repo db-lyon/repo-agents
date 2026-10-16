@@ -1,0 +1,82 @@
+# ue-mcp's .github/repo-agents.yml. The house rules come from its CLAUDE.md:
+# issues close only when a stable release ships the fix, prereleases are
+# X.Y.Z-beta.N, a release is a draft with headline frontmatter that the
+# project's own CI publishes after the version bump, native code needs a live
+# editor to verify, and nothing writes into the deployed test project.
+
+settings:
+  project:
+    name: ue-mcp
+    description: >-
+      ue-mcp is the MCP server (TypeScript, src/), the Unreal editor bridge
+      plugin (C++, plugin/ue_mcp_bridge/), the ue-mcp CLI (install, update,
+      deploy, plugin install), the actions and categories the server
+      advertises, flows, the skills it ships, the feedback category that
+      files agent-feedback issues, and the docs in docs/. A problem in how
+      ue-mcp loads, installs or dispatches any plugin belongs here, not to
+      the plugin.
+    context_files: [CLAUDE.md]
+    # Session links and attribution trailers never go into public text.
+    banned_phrases:
+      - "claude.ai/code/session_"
+      - "Claude-Session:"
+      - "Co-Authored-By: Claude"
+      - "Generated with Claude Code"
+
+  # Sibling trackers. A repo is a transfer; a label keeps the issue here.
+  routing:
+    - key: ue-mcp-studio
+      repo: db-lyon/ue-mcp-studio
+      owns: "UE-MCP Studio, the chat client: its window, sessions, models and sign-in, attachments, Settings > Update, the Studio extension"
+    - key: ue-mcp-studio-plugin
+      repo: db-lyon/ue-mcp-studio-plugin
+      owns: "Studio's editor plugin: toolbar button, the UE-MCP Studio dock tab, the setup page, how it launches the ue-mcp daemon"
+    - key: pie-studio
+      repo: db-lyon/pie-studio
+      owns: "PIE record, replay, observe and input injection (ue-mcp plugin install pie-studio)"
+    - key: voxel-plugin-tools
+      repo: db-lyon/voxel-plugin-tools
+      owns: "the voxel category for Voxel Plugin 2"
+    - key: perforce
+      label: "plugin:perforce"
+      owns: "the Perforce plugin's actions"
+    - key: meshy
+      label: "plugin:meshy"
+      owns: "the Meshy plugin's actions"
+    - key: fab-editor
+      label: "plugin:fab-editor"
+      owns: "the experimental fab_editor category"
+
+  labels:
+    reserved: [bug, enhancement, documentation, question, good first issue, help wanted, wontfix, planned, merge-blocked, agent-feedback]
+
+  triage:
+    # Maintainers file their own issues already triaged; feedback-bot and
+    # public issues are triaged.
+    skip_maintainers: true
+
+  resolve:
+    setup: [npm ci]
+    verify: ["npx tsc --noEmit", "npm run test:unit", "npm run lint:prose"]
+    # C++ under plugin/ needs a live editor on tests/ue_mcp, which CI has not.
+    unverifiable_paths: [plugin/**]
+    # The deployer owns tests/ue_mcp/Plugins; never hand-edit it.
+    protected_paths: [tests/ue_mcp/Plugins/**, .github/workflows/**]
+    # Refs keeps the issue open on merge; closeout closes it at release.
+    issue_ref: Refs
+
+  closeout:
+    close_on: release
+    prerelease_install_hint: npx ue-mcp@beta
+
+  release:
+    # Off until the release gate can run the smoke and live tests against an
+    # editor on tests/ue_mcp.
+    enabled: false
+    bump: prerelease
+    preid: beta
+    publish: draft-and-bump
+    notes:
+      style_doc: docs/release-notes-style.md
+      headline: true
+      headline_validate: node scripts/release-headline.mjs
