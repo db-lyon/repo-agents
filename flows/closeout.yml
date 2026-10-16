@@ -1,0 +1,51 @@
+# Closeout. No model runs; both flows run in one write job with a
+# full-history checkout (tags and the default branch present).
+# closeout.merged, param number (the merged PR): its referenced issues close
+# citing the PR when closeout.close_on is merge, or get labels.fixed_pending
+# when it is release. closeout.released, param tag: open fixed_pending issues
+# whose fix commits are all in a stable tag close citing the version; in a
+# prerelease they get one comment saying where to get it.
+
+tasks:
+  closeout.pr_facts: { class_path: closeout.pr_facts, description: Read the merged PR and the issues it references }
+  closeout.release_facts: { class_path: closeout.release_facts, description: "Read the release and each pending issue's fix commits" }
+  closeout.plan_merged: { class_path: closeout.plan_merged, description: Plan closes or labels for the PR's issues }
+  closeout.plan_released: { class_path: closeout.plan_released, description: Plan closes and prerelease announcements }
+  closeout.apply: { class_path: closeout.apply, description: Apply the closeout plan through the write seam }
+
+flows:
+  closeout.merged:
+    description: Close or label the issues a merged pull request references
+    checks:
+      - { when: "!${settings.closeout.enabled}", action: skip, message: closeout is disabled in settings }
+    steps:
+      10: { task: closeout.pr_facts }
+      20:
+        task: closeout.plan_merged
+        when: ${steps.10.go}
+        options:
+          pr: ${steps.10.pr}
+          issues: ${steps.10.issues}
+      30:
+        task: closeout.apply
+        when: ${steps.20.write}
+        options:
+          plan: ${steps.20.plan}
+
+  closeout.released:
+    description: Close the issues whose fix shipped in a published release
+    checks:
+      - { when: "!${settings.closeout.enabled}", action: skip, message: closeout is disabled in settings }
+    steps:
+      10: { task: closeout.release_facts }
+      20:
+        task: closeout.plan_released
+        when: ${steps.10.go}
+        options:
+          release: ${steps.10.release}
+          issues: ${steps.10.issues}
+      30:
+        task: closeout.apply
+        when: ${steps.20.write}
+        options:
+          plan: ${steps.20.plan}

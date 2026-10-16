@@ -41,6 +41,8 @@ settings:
   # Ceilings the rate guard enforces on every apply run.
   limits:
     writes_per_run: 40
+    # Closeout writes up to four times per issue, and a release can ship many.
+    closeout_writes_per_run: 400
 
   triage:
     enabled: true
@@ -95,7 +97,10 @@ settings:
     # merge: close issues when the fixing PR merges. release: label them
     # fixed_pending on merge and close when a stable release contains the fix.
     close_on: merge
+    mode: act # act | dry-run
+    # On a prerelease that contains an issue's fix, comment once where to get it.
     announce_prereleases: true
+    # Install command for that comment, e.g. "npm install my-package@next".
     prerelease_install_hint: ""
 
   release:
