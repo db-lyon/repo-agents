@@ -1,0 +1,130 @@
+# Reusable: plan, gate, write notes for and publish one release. See docs/architecture.md.
+name: repo-agents release
+
+on:
+  workflow_call:
+    inputs:
+      config: { type: string, default: .github/repo-agents.yml }
+      toolkit_ref: { type: string, default: v1 }
+      force: { type: boolean, default: false, description: "Release even with no shippable commits" }
+    secrets:
+      anthropic_api_key: { required: true }
+      agents_token: { required: false }
+
+concurrency: { group: repo-agents-release, cancel-in-progress: false }
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      enabled: ${{ steps.plan.outputs.enabled }}
+      should_release: ${{ steps.plan.outputs.should_release }}
+      version: ${{ steps.plan.outputs.version }}
+      prev_tag: ${{ steps.plan.outputs.prev_tag }}
+      reason: ${{ steps.plan.outputs.reason }}
+      sha: ${{ steps.plan.outputs.sha }}
+      default_branch: ${{ steps.plan.outputs.default_branch }}
+      gate_runner: ${{ steps.plan.outputs.gate_runner }}
+      has_gates: ${{ steps.plan.outputs.has_gates }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: project, ref: "${{ github.event.repository.default_branch }}", fetch-depth: 0, persist-credentials: false }
+      - uses: actions/checkout@v4
+        with: { repository: db-lyon/repo-agents, ref: "${{ inputs.toolkit_ref }}", path: toolkit, persist-credentials: false }
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - run: npm ci --omit=dev --prefix toolkit
+      - name: Plan
+        id: plan
+        working-directory: project
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO_AGENTS_CONFIG: ${{ inputs.config }}
+          FORCE: ${{ inputs.force }}
+        run: node ../toolkit/bin/repo-agents.mjs run release.plan --param "force=$FORCE" --param "outdir=$RUNNER_TEMP/work"
+
+  gate:
+    needs: plan
+    if: needs.plan.outputs.enabled == 'true' && needs.plan.outputs.should_release == 'true' && needs.plan.outputs.has_gates == 'true'
+    runs-on: ${{ fromJSON(needs.plan.outputs.gate_runner) }}
+    timeout-minutes: 360
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: project, ref: "${{ needs.plan.outputs.sha }}", fetch-depth: 0, persist-credentials: false }
+      - uses: actions/checkout@v4
+        with: { repository: db-lyon/repo-agents, ref: "${{ inputs.toolkit_ref }}", path: toolkit, persist-credentials: false }
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - run: npm ci --omit=dev --prefix toolkit
+      - name: Gate
+        working-directory: project
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO_AGENTS_CONFIG: ${{ inputs.config }}
+        run: node ../toolkit/bin/repo-agents.mjs run release.gate
+
+  notes:
+    needs: [plan, gate]
+    if: always() && needs.plan.outputs.enabled == 'true' && needs.plan.outputs.should_release == 'true' && (needs.gate.result == 'success' || needs.gate.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: project, ref: "${{ needs.plan.outputs.sha }}", fetch-depth: 0, persist-credentials: false }
+      - uses: actions/checkout@v4
+        with: { repository: db-lyon/repo-agents, ref: "${{ inputs.toolkit_ref }}", path: toolkit, persist-credentials: false }
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - run: npm ci --omit=dev --prefix toolkit && npm install -g @anthropic-ai/claude-code@2.1.301
+      - name: Notes
+        working-directory: project
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ANTHROPIC_API_KEY: ${{ secrets.anthropic_api_key }}
+          REPO_AGENTS_CONFIG: ${{ inputs.config }}
+          VERSION: ${{ needs.plan.outputs.version }}
+          PREV_TAG: ${{ needs.plan.outputs.prev_tag }}
+        run: node ../toolkit/bin/repo-agents.mjs run release.notes --param "version=$VERSION" --param "prev_tag=$PREV_TAG" --param "outdir=$RUNNER_TEMP/work"
+      - uses: actions/upload-artifact@v4
+        with: { name: "release-${{ needs.plan.outputs.version }}", path: "${{ runner.temp }}/work", if-no-files-found: error, retention-days: 30 }
+
+  publish:
+    needs: [plan, notes]
+    if: always() && needs.notes.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: project, ref: "${{ needs.plan.outputs.sha }}", fetch-depth: 0, persist-credentials: false }
+      - uses: actions/checkout@v4
+        with: { repository: db-lyon/repo-agents, ref: "${{ inputs.toolkit_ref }}", path: toolkit, persist-credentials: false }
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - run: npm ci --omit=dev --prefix toolkit
+      - uses: actions/download-artifact@v4
+        with: { name: "release-${{ needs.plan.outputs.version }}", path: "${{ runner.temp }}/work" }
+      - name: Publish
+        working-directory: project
+        env:
+          GH_TOKEN: ${{ secrets.agents_token || github.token }}
+          AGENTS_TOKEN: ${{ secrets.agents_token }}
+          REPO_AGENTS_CONFIG: ${{ inputs.config }}
+          VERSION: ${{ needs.plan.outputs.version }}
+          PREV_TAG: ${{ needs.plan.outputs.prev_tag }}
+          DEFAULT_BRANCH: ${{ needs.plan.outputs.default_branch }}
+        run: >-
+          node ../toolkit/bin/repo-agents.mjs run release.publish
+          --param "version=$VERSION" --param "prev_tag=$PREV_TAG"
+          --param "default_branch=$DEFAULT_BRANCH" --param "outdir=$RUNNER_TEMP/work"

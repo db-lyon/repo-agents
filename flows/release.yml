@@ -1,0 +1,56 @@
+# Release. release.plan and release.notes run in read-only jobs, release.gate
+# on the project's gate runner, release.publish in the write job.
+# Params: outdir (all), force (plan), version, prev_tag, default_branch.
+
+tasks:
+  shell: { class_path: shell, description: Run a shell command }
+  claude_code: { class_path: claude_code, description: Run a headless Claude Code agent }
+  report: { class_path: report, description: Write to the job summary }
+  release.plan: { class_path: release.plan, description: Decide whether and what to release }
+  release.gates:
+    class_path: release.gates
+    description: Run the release gate commands
+    options:
+      commands: ${settings.release.gates}
+  release.prepare_notes: { class_path: release.prepare_notes, description: Build the notes prompt and schema }
+  release.publish: { class_path: release.publish, description: Bump the version and create the release }
+
+flows:
+  release.plan:
+    description: Find the previous tag, shippable commits, required workflows, drafts and the next version
+    steps:
+      10: { task: release.plan }
+      90:
+        task: report
+        options:
+          text: ${steps.10.summary}
+
+  release.gate:
+    description: Run every release gate on the release commit
+    steps:
+      10: { task: release.gates }
+
+  release.notes:
+    description: Write the release notes with a read-only agent
+    steps:
+      10: { task: release.prepare_notes }
+      20:
+        task: claude_code
+        when: ${steps.10.go}
+        options:
+          prompt_file: stages/release/prompt.md
+          vars: ${steps.10.vars}
+          schema: ${steps.10.schema}
+          tools: [Read, Grep, Glob]
+          model: ${settings.release.model}
+          max_turns: ${settings.release.max_turns}
+          max_budget_usd: ${settings.release.max_budget_usd}
+
+  release.publish:
+    description: Validate the notes, bump the version, and draft or publish the release
+    steps:
+      10: { task: release.publish }
+      90:
+        task: report
+        options:
+          text: ${steps.10.summary}

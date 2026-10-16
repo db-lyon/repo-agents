@@ -1,0 +1,26 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["body", "skip", "skip_reason"],
+  "properties": {
+    "headline": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 6,
+      "items": { "type": "string", "minLength": 3, "maxLength": 30 },
+      "description": "Short noun phrases naming the release's main features. Only when headline frontmatter is required."
+    },
+    "body": {
+      "type": "string",
+      "description": "The release notes in markdown, without frontmatter. Empty when skip is true."
+    },
+    "skip": {
+      "type": "boolean",
+      "description": "True when nothing in the range is worth a release."
+    },
+    "skip_reason": {
+      "type": "string",
+      "description": "Why the release was skipped, one sentence. Empty when skip is false."
+    }
+  }
+}

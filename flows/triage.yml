@@ -1,0 +1,44 @@
+# Triage. Params: number, outdir.
+# triage.decide runs in the read-only job; triage.apply in the write job.
+
+tasks:
+  claude_code: { class_path: claude_code, description: Run a headless Claude Code agent }
+  report: { class_path: report, description: Write to the job summary }
+  issue.apply_plan: { class_path: issue.apply_plan, description: Apply planned writes to an issue }
+  triage.prepare: { class_path: triage.prepare, description: Build the triage prompt and schema }
+  triage.plan:
+    class_path: triage.plan
+    description: Verify the decision and plan the writes
+    options:
+      mode: ${settings.triage.mode}
+
+flows:
+  triage.decide:
+    description: Read the issue, search, read the code, decide
+    steps:
+      10: { task: triage.prepare }
+      20:
+        task: claude_code
+        when: ${steps.10.go}
+        options:
+          prompt_file: stages/triage/prompt.md
+          vars: ${steps.10.vars}
+          schema: ${steps.10.schema}
+          tools: [Read, Grep, Glob]
+          model: ${settings.triage.model}
+          max_turns: ${settings.triage.max_turns}
+          max_budget_usd: ${settings.triage.max_budget_usd}
+
+  triage.apply:
+    description: Verify the decision and apply it
+    steps:
+      10: { task: triage.plan }
+      20:
+        task: issue.apply_plan
+        when: ${steps.10.write}
+        options:
+          plan: ${steps.10.plan}
+      90:
+        task: report
+        options:
+          text: ${steps.10.summary}

@@ -1,0 +1,70 @@
+# Resolve. Params: number, outdir.
+# resolve.decide runs in the read-only job; resolve.apply in the write job.
+
+tasks:
+  claude_code: { class_path: claude_code, description: Run a headless Claude Code agent }
+  report: { class_path: report, description: Write to the job summary }
+  issue.apply_plan: { class_path: issue.apply_plan, description: Apply planned writes to an issue }
+  resolve.prepare: { class_path: resolve.prepare, description: Build the resolve prompt, schema and commands }
+  resolve.setup:
+    class_path: resolve.setup
+    description: Run the setup commands and snapshot untracked files
+    options:
+      commands: ${settings.resolve.setup}
+  resolve.capture: { class_path: resolve.capture, description: Write the agent's changes to fix.patch }
+  resolve.plan: { class_path: resolve.plan, description: Apply the patch, verify, and plan the writes }
+  resolve.publish: { class_path: resolve.publish, description: Commit, push and open or update the PR }
+
+flows:
+  resolve.decide:
+    description: Read the issue and the code, implement a fix, capture the diff
+    steps:
+      10: { task: resolve.prepare }
+      20:
+        task: resolve.setup
+        when: ${steps.10.go}
+      30:
+        task: claude_code
+        when: ${steps.20.go}
+        options:
+          prompt_file: stages/resolve/prompt.md
+          vars: ${steps.10.vars}
+          schema: ${steps.10.schema}
+          tools: [Read, Grep, Glob, Edit, Write]
+          commands: ${steps.10.commands}
+          model: ${settings.resolve.model}
+          max_turns: ${settings.resolve.max_turns}
+          max_budget_usd: ${settings.resolve.max_budget_usd}
+      40:
+        task: resolve.capture
+        when: ${steps.20.go}
+        options:
+          snapshot: ${steps.20.untracked}
+      90:
+        task: report
+        options:
+          text: ${steps.10.summary}${steps.20.summary}${steps.40.summary}
+
+  resolve.apply:
+    description: Verify the fix and open a pull request, or explain on the issue
+    steps:
+      10: { task: resolve.plan }
+      20:
+        task: issue.apply_plan
+        when: ${steps.10.comment}
+        options:
+          plan: ${steps.10.issue_plan}
+      30:
+        task: resolve.publish
+        when: ${steps.10.pr}
+        options:
+          publish: ${steps.10.publish}
+      40:
+        task: issue.apply_plan
+        when: ${steps.10.pr}
+        options:
+          plan: ${steps.30.issue_plan}
+      90:
+        task: report
+        options:
+          text: ${steps.10.summary}${steps.30.summary}

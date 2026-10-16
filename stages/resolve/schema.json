@@ -1,0 +1,14 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "summary", "commit_message", "pr_title", "pr_body", "tests_run", "risk"],
+  "properties": {
+    "status": { "type": "string", "enum": ["fixed", "cannot-fix", "needs-human"] },
+    "summary": { "type": "string", "minLength": 1, "maxLength": 1200 },
+    "commit_message": { "type": "string" },
+    "pr_title": { "type": "string", "maxLength": 200 },
+    "pr_body": { "type": "string" },
+    "tests_run": { "type": "array", "items": { "type": "string" } },
+    "risk": { "type": "string", "enum": ["low", "medium", "high"] }
+  }
+}

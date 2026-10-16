@@ -1,0 +1,55 @@
+# Review. Params: number, outdir.
+# review.decide runs in the read-only job with the base checkout as the
+# project root and the PR head in ../pr; review.apply runs in the write job.
+
+tasks:
+  review.prepare: { class_path: review.prepare, description: Decide whether to review and build the prompt }
+  review.plan: { class_path: review.plan, description: Verify the decision and plan the review }
+  review.post: { class_path: review.post, description: Post the review }
+  review.merge:
+    class_path: review.merge
+    description: Merge an approved PR
+    options:
+      method: ${settings.review.merge_method}
+
+flows:
+  review.decide:
+    description: Read the PR, its diff, checks and code, decide
+    steps:
+      10: { task: review.prepare }
+      20:
+        task: claude_code
+        when: ${steps.10.go}
+        options:
+          prompt_file: stages/review/prompt.md
+          vars: ${steps.10.vars}
+          schema: ${steps.10.schema}
+          cwd: ../pr
+          tools: [Read, Grep, Glob]
+          model: ${settings.review.model}
+          max_turns: ${settings.review.max_turns}
+          max_budget_usd: ${settings.review.max_budget_usd}
+      90:
+        task: report
+        options:
+          text: ${steps.10.summary}
+
+  review.apply:
+    description: Verify the decision, post the review, merge when allowed
+    steps:
+      10: { task: review.plan }
+      20:
+        task: report
+        options:
+          text: ${steps.10.summary}
+      30:
+        task: review.post
+        when: ${steps.10.post}
+        options:
+          plan: ${steps.10.plan}
+          sha: ${steps.10.sha}
+      40:
+        task: review.merge
+        when: ${steps.10.merge}
+        options:
+          sha: ${steps.10.sha}
