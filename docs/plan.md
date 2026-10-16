@@ -1,5 +1,7 @@
 # repo-agents: plan
 
+> Superseded by [proposal-toolkit.md](proposal-toolkit.md), the composite-action model. Kept for its trust model, ue-mcp rules and history; where the two differ, the proposal holds.
+
 Status: draft for review, 2026-10-16. Nothing in `C:\Users\david\Projects\repo-agents` is committed or pushed. No code changes until this plan is agreed.
 
 ## 1. Goal

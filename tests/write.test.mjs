@@ -130,6 +130,15 @@ describe("write seam", () => {
     expect((await attempt({ stage: "triage", kind: "label", target: "#9" }, cfg(), { ...opts, registry: new TaskRegistry() })).ok).toBe(true);
   });
 
+  it("loads a project guard written as a plain function, with no imports", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ra-guardfn-"));
+    fs.writeFileSync(path.join(dir, "guard.mjs"), 'export default (op) => (op.labels?.includes("frozen") ? "frozen is set by hand" : null);\n');
+    const tasks = { "guard.frozen.before": { class_path: "./guard.mjs" } };
+    const opts = () => ({ registry: new TaskRegistry(), tasks, root: dir });
+    expect(await attempt({ stage: "triage", kind: "label", labels: ["frozen"] }, cfg(), opts())).toMatchObject({ ok: false, guard: "frozen", reason: "frozen is set by hand" });
+    expect((await attempt({ stage: "triage", kind: "label", labels: ["bug"] }, cfg(), opts())).ok).toBe(true);
+  });
+
   it("refuses a project guard with an unknown scope", async () => {
     const reg = new TaskRegistry();
     const w = createWriter({ settings: cfg(), registry: reg, tasks: { "guard.x.beforeDeploy": { class_path: "report" } } });
