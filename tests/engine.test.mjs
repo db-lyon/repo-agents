@@ -38,8 +38,16 @@ describe("settings", () => {
   });
 
   it("rejects a closing issue_ref when issues close on release", () => {
-    expect(() => validate(merge(DEFAULTS, { resolve: { issue_ref: "Closes" } }))).toThrow(/issue_ref/);
-    expect(validate(merge(DEFAULTS, { resolve: { issue_ref: "Closes" }, closeout: { close_on: "merge" } })).resolve.issue_ref).toBe("Closes");
+    expect(() => validate(merge(DEFAULTS, { resolve: { issue_ref: "Closes" }, closeout: { close_on: "release" } }))).toThrow(/issue_ref/);
+    expect(validate(merge(DEFAULTS, { resolve: { issue_ref: "Closes" } })).resolve.issue_ref).toBe("Closes");
+  });
+
+  it("ships neutral defaults: close on merge, no release, patch bumps", () => {
+    expect(DEFAULTS.closeout.close_on).toBe("merge");
+    expect(DEFAULTS.release).toMatchObject({ enabled: false, bump: "patch", preid: "" });
+    expect(DEFAULTS.labels.reserved).not.toContain("merge-blocked");
+    expect(() => validate(merge(DEFAULTS, { release: { bump: "prerelease" } }))).toThrow(/preid/);
+    expect(validate(merge(DEFAULTS, { release: { bump: "prerelease", preid: "rc" } })).release.preid).toBe("rc");
   });
 
   it("lets an overlay insert a step and switch one off", async () => {

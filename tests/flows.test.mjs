@@ -86,6 +86,28 @@ describe("triage.apply", () => {
     expect(writer.audit.at(-1)).toMatchObject({ kind: "close", outcome: "denied", error: expect.stringContaining("closes are on hold") });
   });
 
+  const fixedFacts = () => {
+    const r = triageFacts({ outcome: "fixed", confidence: "high", kind: "bug", areas: [], summary: "The parser handles it now.", evidence: "x", fixCommit: "abc12345" });
+    r.data.facts.fix = { sha: "abc12345ff", short: "abc12345", onDefault: true, releasedIn: null, prerelease: null };
+    return r;
+  };
+
+  it("closes an issue fixed on the default branch when issues close on merge", async () => {
+    const { runner, ops } = setup("", { "triage.facts": stub("triage.facts", fixedFacts()) });
+    const r = await runner.run({ flowName: "triage.apply", params: { number: 5 } });
+    expect(r.success).toBe(true);
+    expect(ops.at(-1)).toMatchObject({ kind: "close", reason: "completed", fixedIn: "abc12345" });
+    expect(ops.find((o) => o.kind === "comment").text).toMatch(/^Fixed in abc12345 on the default branch\./);
+  });
+
+  it("labels an unreleased fix fixed_pending when issues close on release", async () => {
+    const { runner, ops } = setup("settings:\n  closeout:\n    close_on: release\n", { "triage.facts": stub("triage.facts", fixedFacts()) });
+    const r = await runner.run({ flowName: "triage.apply", params: { number: 5 } });
+    expect(r.success).toBe(true);
+    expect(ops.map((o) => o.kind)).not.toContain("close");
+    expect(ops[0].labels).toContain("fixed-pending-release");
+  });
+
   it("skips an issue the decide job did not triage", async () => {
     const { runner, ops } = setup("", { "triage.facts": stub("triage.facts", { success: true, data: { go: false } }) });
     const r = await runner.run({ flowName: "triage.apply", params: { number: 5 } });

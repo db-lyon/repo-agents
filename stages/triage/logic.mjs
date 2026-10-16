@@ -105,10 +105,16 @@ export function resolveDecision(decision, facts, settings, mode) {
     proposed === "duplicate" ||
     proposed === "invalid" ||
     (proposed === "move" && Boolean(extra.dest.repo)) ||
-    (proposed === "fixed" && Boolean(extra.fix.releasedIn));
+    (proposed === "fixed" && Boolean(fixClosesNow(extra.fix, settings)));
   if (closes && decision.confidence !== "high") return downgrade(`${decision.confidence} confidence; closing needs high`);
   if (closes && mode === "propose") return { outcome: "proposed", proposed, closes, ...extra };
   return { outcome: proposed, closes, ...extra };
+}
+
+/** A verified fix closes the issue now: released in a stable tag, or merged when issues close on merge. */
+export function fixClosesNow(fix, settings) {
+  if (!fix) return false;
+  return Boolean(fix.releasedIn) || (settings.closeout.close_on === "merge" && Boolean(fix.onDefault));
 }
 
 export function outcomeText(outcome, r, decision, ctx) {
@@ -124,6 +130,9 @@ export function outcomeText(outcome, r, decision, ctx) {
       const { short, releasedIn, prerelease } = r.fix;
       if (releasedIn) {
         return sentence(`Fixed in ${short}, released in ${releasedIn}.`, s, `Comment here if it still reproduces on ${ctx.latestRelease ?? releasedIn} or later.`);
+      }
+      if (ctx.settings.closeout.close_on === "merge") {
+        return sentence(`Fixed in ${short} on the default branch.`, s, "Comment here if it still reproduces on that commit or later.");
       }
       const hint = ctx.settings.closeout.prerelease_install_hint;
       const beta = prerelease ? `, available in ${prerelease}${hint ? ` (\`${hint}\`)` : ""}` : "";
@@ -177,7 +186,7 @@ export function planActions(r, decision, ctx) {
     case "fixed":
       add.add(L.triaged);
       comment = outcomeText("fixed", r, decision, ctx);
-      if (r.fix.releasedIn) close = "completed";
+      if (fixClosesNow(r.fix, settings)) close = "completed";
       else add.add(L.fixed_pending);
       break;
     case "move":

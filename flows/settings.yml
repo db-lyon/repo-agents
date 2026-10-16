@@ -36,7 +36,7 @@ settings:
     invalid: invalid
     limitation: limitation
     # Labels that are never area labels.
-    reserved: [bug, enhancement, documentation, question, good first issue, help wanted, wontfix, planned, merge-blocked]
+    reserved: [bug, enhancement, documentation, question, good first issue, help wanted, wontfix]
 
   # Ceilings the rate guard enforces on every apply run.
   limits:
@@ -48,7 +48,8 @@ settings:
     model: claude-sonnet-5-5
     max_budget_usd: 2
     max_turns: 40
-    skip_maintainers: true
+    # Leave issues filed by owners, members and collaborators alone.
+    skip_maintainers: false
     # Accepted bugs and requests get the resolve label automatically.
     auto_resolve: false
     auto_resolve_kinds: [bug]
@@ -93,7 +94,7 @@ settings:
     enabled: true
     # merge: close issues when the fixing PR merges. release: label them
     # fixed_pending on merge and close when a stable release contains the fix.
-    close_on: release
+    close_on: merge
     announce_prereleases: true
     prerelease_install_hint: ""
 
@@ -102,9 +103,9 @@ settings:
     model: claude-sonnet-5-5
     max_budget_usd: 2
     max_turns: 40
-    # prerelease: X.Y.Z-<preid>.N  patch: X.Y.Z+1
-    bump: prerelease
-    preid: beta
+    # patch: X.Y.Z+1, minor, major, or prerelease: X.Y.Z-<preid>.N (needs preid)
+    bump: patch
+    preid: ""
     # Where the version lives. package.json is read and written natively;
     # anything else needs version_command.
     version_file: package.json

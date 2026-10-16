@@ -6,8 +6,8 @@ import { addLabels, closeIssue, defaultBranch, dispatch, gh, removeLabels, repoS
 /**
  * issue.apply_plan: labels, marker comment, close, transfer and a follow-up
  * stage dispatch, in that order, each through the write seam. The plan comes
- * from a stage's planning task; plan.confidence and plan.releasedIn are the
- * evidence the guards check closes and transfers against.
+ * from a stage's planning task; plan.confidence, plan.releasedIn and
+ * plan.fixedIn are the evidence the guards check closes and transfers against.
  */
 export class IssueApplyPlan extends BaseTask {
   static description = "Apply a planned set of writes to one issue";
@@ -37,7 +37,7 @@ export class IssueApplyPlan extends BaseTask {
       const marker = p.marker ?? "<!-- repo-agents -->";
       await write({ kind: "comment", text: p.comment }, () => upsertComment(repo, n, marker, p.comment));
     }
-    if (p.close) await write({ kind: "close", reason: p.close, releasedIn: p.releasedIn ?? null }, () => closeIssue(repo, n, p.close));
+    if (p.close) await write({ kind: "close", reason: p.close, releasedIn: p.releasedIn ?? null, fixedIn: p.fixedIn ?? null }, () => closeIssue(repo, n, p.close));
     if (p.transfer) {
       await write({ kind: "transfer", destination: p.transfer }, () =>
         gh(["issue", "transfer", String(n), p.transfer, "--repo", repo], { env: { ...process.env, GH_TOKEN: process.env.AGENTS_TOKEN } }));

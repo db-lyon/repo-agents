@@ -55,11 +55,19 @@ describe("write seam", () => {
     expect((await attempt({ stage: "triage", kind: "close", reason: "duplicate", confidence: "high" })).ok).toBe(true);
   });
 
-  it("closes as completed only with a fix in a stable release", async () => {
+  it("closes as completed only with a fix in a stable release when issues close on release", async () => {
+    const release = cfg({ closeout: { close_on: "release" } });
     const op = { stage: "triage", kind: "close", reason: "completed", confidence: "high" };
-    expect((await attempt(op)).guard).toBe("close_policy");
-    expect((await attempt({ ...op, releasedIn: "v1.2.0" })).ok).toBe(true);
-    expect((await attempt({ ...op, reason: "not_planned" })).ok).toBe(true);
+    expect((await attempt(op, release)).guard).toBe("close_policy");
+    expect((await attempt({ ...op, fixedIn: "abc12345" }, release)).guard).toBe("close_policy");
+    expect((await attempt({ ...op, releasedIn: "v1.2.0" }, release)).ok).toBe(true);
+    expect((await attempt({ ...op, reason: "not_planned" }, release)).ok).toBe(true);
+  });
+
+  it("closes as completed with a merged fix when issues close on merge", async () => {
+    const op = { stage: "closeout", kind: "close", reason: "completed" };
+    expect((await attempt(op)).reason).toMatch(/merged fix/);
+    expect((await attempt({ ...op, fixedIn: "#12" })).ok).toBe(true);
   });
 
   it("keeps resolve pushes on the agent prefix and off the default branch", async () => {
@@ -91,9 +99,10 @@ describe("write seam", () => {
     const settings = cfg({ project: { banned_phrases: ["Acme"] } });
     expect((await attempt({ stage: "triage", kind: "comment", text: "Try acme instead." }, settings)).guard).toBe("prose");
     expect((await attempt({ stage: "triage", kind: "comment", text: `a ${String.fromCharCode(0x2014)} b` })).guard).toBe("prose");
-    expect((await attempt({ stage: "resolve", kind: "pr_create", text: "Body\n\nFixes #7" })).guard).toBe("prose");
-    expect((await attempt({ stage: "resolve", kind: "pr_create", text: "Body\n\nRefs #7" })).ok).toBe(true);
-    expect((await attempt({ stage: "resolve", kind: "pr_create", text: "Fixes #7" }, cfg({ closeout: { close_on: "merge" } }))).ok).toBe(true);
+    const onRelease = cfg({ closeout: { close_on: "release" } });
+    expect((await attempt({ stage: "resolve", kind: "pr_create", text: "Body\n\nFixes #7" }, onRelease)).guard).toBe("prose");
+    expect((await attempt({ stage: "resolve", kind: "pr_create", text: "Body\n\nRefs #7" }, onRelease)).ok).toBe(true);
+    expect((await attempt({ stage: "resolve", kind: "pr_create", text: "Fixes #7" })).ok).toBe(true);
     const log = `Refs #7\n\n\`\`\`\nexpected Acme ${String.fromCharCode(0x2026)}\n\`\`\``;
     expect((await attempt({ stage: "resolve", kind: "pr_create", text: log }, settings)).ok).toBe(true);
   });

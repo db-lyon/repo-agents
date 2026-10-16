@@ -128,6 +128,7 @@ export class TriagePlan extends BaseTask {
       ...planActions(resolved, decision, ctx),
       confidence: decision?.confidence,
       releasedIn: resolved.fix?.releasedIn ?? null,
+      fixedIn: resolved.fix?.onDefault ? resolved.fix.short : null,
     };
     const summary = [
       `### Triage #${n}: ${resolved.outcome}${resolved.proposed && resolved.proposed !== resolved.outcome ? ` (proposed ${resolved.proposed})` : ""}`,
