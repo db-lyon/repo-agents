@@ -1,11 +1,30 @@
 {
-  "name": "repo-agents",
+  "name": "@db-lyon/repo-agents",
   "version": "1.0.0",
-  "private": true,
-  "description": "Reusable GitHub workflows that triage, resolve, review and release with Claude agents, configured per repository.",
+  "description": "Engine for the repo-agents action suite: flowkit flows that triage, resolve, review, close out and release with Claude agents, configured per repository.",
   "type": "module",
+  "license": "MIT",
+  "author": "David Bingham",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/db-lyon/repo-agents.git"
+  },
+  "homepage": "https://github.com/db-lyon/repo-agents#readme",
+  "bin": {
+    "repo-agents": "cli.mjs"
+  },
+  "files": [
+    "cli.mjs",
+    "lib/",
+    "tasks/",
+    "stages/",
+    "flows/"
+  ],
   "engines": {
     "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "test": "vitest run",
