@@ -1,0 +1,138 @@
+# Copy to .github/workflows/repo-agents.yml in a project. Routes GitHub
+# events to the standard workflows. Secrets: ANTHROPIC_API_KEY, and
+# optionally REPO_AGENTS_TOKEN, a write token for transfers and for pushes
+# that must trigger CI.
+name: repo-agents
+
+on:
+  issues:
+    types: [opened, labeled]
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review, closed]
+  release:
+    types: [published]
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: Stage to run.
+        required: true
+        type: choice
+        options: [triage, resolve, review, closeout-merged, closeout-released, release]
+      number:
+        description: Issue or pull request number (triage, resolve, review, closeout-merged).
+        required: false
+        type: string
+      tag:
+        description: Release tag (closeout-released).
+        required: false
+        type: string
+      mode:
+        description: Triage mode, act, propose or dry-run. Empty for the config.
+        required: false
+        type: string
+      force:
+        description: Release even with no shippable commits.
+        required: false
+        type: boolean
+        default: false
+
+permissions: {}
+
+jobs:
+  triage:
+    if: >-
+      (github.event_name == 'issues' && github.event.action == 'opened') ||
+      (github.event_name == 'workflow_dispatch' && inputs.stage == 'triage')
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
+      actions: write
+    uses: repo-agents/standard-workflows/.github/workflows/issue-triage.yml@v1
+    with:
+      issue: ${{ github.event.issue.number || inputs.number }}
+      mode: ${{ inputs.mode || '' }}
+    secrets:
+      anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+      agents-token: ${{ secrets.REPO_AGENTS_TOKEN }}
+
+  resolve:
+    if: >-
+      (github.event_name == 'issues' && github.event.action == 'labeled' && github.event.label.name == 'resolve') ||
+      (github.event_name == 'workflow_dispatch' && inputs.stage == 'resolve')
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: write
+    uses: repo-agents/standard-workflows/.github/workflows/issue-resolve.yml@v1
+    with:
+      issue: ${{ github.event.issue.number || inputs.number }}
+    secrets:
+      anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+      agents-token: ${{ secrets.REPO_AGENTS_TOKEN }}
+
+  review:
+    if: >-
+      (github.event_name == 'pull_request_target' && github.event.action != 'closed' && !github.event.pull_request.draft) ||
+      (github.event_name == 'workflow_dispatch' && inputs.stage == 'review')
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      # The merge reads check results; without these the token sees none.
+      checks: read
+      statuses: read
+    uses: repo-agents/standard-workflows/.github/workflows/pr-review.yml@v1
+    with:
+      pr: ${{ github.event.pull_request.number || inputs.number }}
+    secrets:
+      anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+      agents-token: ${{ secrets.REPO_AGENTS_TOKEN }}
+
+  closeout-merged:
+    if: >-
+      (github.event_name == 'pull_request_target' && github.event.action == 'closed' && github.event.pull_request.merged) ||
+      (github.event_name == 'workflow_dispatch' && inputs.stage == 'closeout-merged')
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
+    uses: repo-agents/standard-workflows/.github/workflows/closeout.yml@v1
+    with:
+      event: merged
+      pr: ${{ github.event.pull_request.number || inputs.number }}
+    secrets:
+      agents-token: ${{ secrets.REPO_AGENTS_TOKEN }}
+
+  closeout-released:
+    if: >-
+      github.event_name == 'release' ||
+      (github.event_name == 'workflow_dispatch' && inputs.stage == 'closeout-released')
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
+    uses: repo-agents/standard-workflows/.github/workflows/closeout.yml@v1
+    with:
+      event: released
+      tag: ${{ github.event.release.tag_name || inputs.tag }}
+    secrets:
+      agents-token: ${{ secrets.REPO_AGENTS_TOKEN }}
+
+  release:
+    if: >-
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' && inputs.stage == 'release')
+    permissions:
+      contents: write
+      actions: write
+      pull-requests: read
+    uses: repo-agents/standard-workflows/.github/workflows/release.yml@v1
+    with:
+      force: ${{ inputs.force || false }}
+    secrets:
+      anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+      agents-token: ${{ secrets.REPO_AGENTS_TOKEN }}

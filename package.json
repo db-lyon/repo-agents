@@ -18,7 +18,8 @@
     "lib/",
     "tasks/",
     "stages/",
-    "flows/"
+    "flows/",
+    "templates/"
   ],
   "engines": {
     "node": ">=20"

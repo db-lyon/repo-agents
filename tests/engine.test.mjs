@@ -133,7 +133,8 @@ describe("text", () => {
 describe("cli", () => {
   it("parses params and formats steps", () => {
     expect(parseArgs(["run", "triage.apply", "--param", "number=12", "-p", "mode=propose", "--plan"]))
-      .toEqual({ command: "run", flow: "triage.apply", params: { number: 12, mode: "propose" }, plan: true });
+      .toEqual({ command: "run", flow: "triage.apply", params: { number: 12, mode: "propose" }, plan: true, repo: undefined, dryRun: false });
+    expect(parseArgs(["install", "--repo", "o/r", "--dry-run"])).toMatchObject({ command: "install", repo: "o/r", dryRun: true });
     expect(stepLines([{ stepNumber: 10, name: "a", skipped: true, skipReason: "when" }, { path: "20", name: "b", status: "error", checks: [{ triggered: true, action: "error", message: "no" }] }]))
       .toEqual([`${"10".padEnd(6)} ${"a".padEnd(28)} skipped (when)`, `${"20".padEnd(6)} ${"b".padEnd(28)} error`, "       error: no"]);
   });

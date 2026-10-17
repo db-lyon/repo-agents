@@ -1,0 +1,21 @@
+# repo-agents config. Every key not set here keeps the toolkit default; run
+# `repo-agents settings` to see the merged result.
+
+settings:
+  project:
+    name: {{NAME}}
+    # What this repository owns, in plain sentences. Triage uses it to decide
+    # whether an issue belongs here.
+    description: >-
+      {{DESCRIPTION}}
+    context_files: [README.md]
+
+  resolve:
+    # Commands that install dependencies, then the ones a fix must pass.
+    setup: []
+    verify: []
+
+  review:
+    # none: agents review, humans merge. agents: agent PRs merge themselves
+    # once approved and green. all: any approved, green PR merges.
+    auto_merge: none
