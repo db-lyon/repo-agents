@@ -252,7 +252,12 @@ export class ReviewMerge extends BaseTask {
     const env = { ...process.env, GH_TOKEN: process.env.AGENTS_TOKEN || process.env.GH_TOKEN };
 
     const auto = await writer.write({ ...op, auto: true }, () => runKeep("gh", mergeArgs(repo, n, method, sha, true), { env }));
-    if (auto.status === 0) return { success: true, data: { merged: "auto", summary: `Merge: auto-merge (${method}) enabled for ${sha.slice(0, 8)}.` } };
+    if (auto.status === 0) {
+      // gh merges at once when the PR is already mergeable; say which happened.
+      const state = runKeep("gh", ["pr", "view", String(n), "--repo", repo, "--json", "state", "--jq", ".state"], { env }).stdout.trim();
+      const done = state === "MERGED";
+      return { success: true, data: { merged: done ? "direct" : "auto", summary: done ? `Merge: merged ${sha.slice(0, 8)} (${method}).` : `Merge: auto-merge (${method}) enabled for ${sha.slice(0, 8)}.` } };
+    }
     this.logger.warn(`auto-merge refused: ${auto.stderr}`);
 
     const checks = runKeep("gh", ["pr", "checks", String(n), "--repo", repo, "--json", "name,bucket"]);
