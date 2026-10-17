@@ -38,18 +38,19 @@ const STOP = new Set("a an the and or not no of to in on for with from by is are
  */
 export function duplicateQueries(title, body = "") {
   const text = `${title}\n${body.slice(0, 4000)}`;
-  const idents = [...new Set(text.match(/\b[a-z][a-z0-9]*(?:[_.][a-z0-9]+)+\b|\b\w+\(\w*\)/gi) ?? [])].slice(0, 4);
+  const idents = [...new Set(text.match(/\b[a-z][a-z0-9]*(?:[_.][a-z0-9]+)+\b|\b[a-z]+[A-Z][A-Za-z0-9]*\b|\b\w+(?=\()/g) ?? [])].slice(0, 4);
   const quoted = [...new Set((text.match(/["'`]([^"'`\n]{12,80})["'`]/g) ?? []).map((q) => q.slice(1, -1)))].slice(0, 2);
   const words = title.toLowerCase().replace(/[^a-z0-9_ ]/g, " ").split(/\s+/).filter((w) => w.length > 2 && !STOP.has(w)).slice(0, 6);
   const queries = [];
   if (words.length) queries.push(words.join(" "));
-  for (const i of idents) queries.push(i.replace(/\(.*\)/, ""));
+  for (const i of idents) queries.push(i);
   for (const q of quoted) queries.push(`"${q}"`);
   return [...new Set(queries)].slice(0, 6);
 }
 
 export function candidateTable(candidates, self) {
-  const rows = candidates.filter((c) => c.number !== self).slice(0, 15);
+  // Only older issues: a duplicate points at the earlier report, never a later one.
+  const rows = candidates.filter((c) => c.number < self).sort((a, b) => b.number - a.number).slice(0, 25);
   if (!rows.length) return "No candidates found by the pre-search. Run your own searches.";
   return ["| # | state | title |", "|---|---|---|", ...rows.map((c) => `| #${c.number} | ${c.state.toLowerCase()} | ${c.title.replace(/\|/g, "/")} |`)].join("\n");
 }

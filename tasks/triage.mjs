@@ -22,9 +22,17 @@ export class TriagePrepare extends BaseTask {
     const issue = getIssue(repo, this.options.number);
     const go = shouldTriage(process.env.GITHUB_EVENT_NAME, issue, settings);
     const labels = repoLabels(repo);
+    // The most recent issues come first and need no search: GitHub's search
+    // index lags by minutes, which is exactly when a duplicate tends to arrive.
     const seen = new Map();
-    for (const q of go ? duplicateQueries(issue.title, issue.body) : []) {
-      for (const c of ghJson(["issue", "list", "--repo", repo, "--state", "all", "--limit", "8", "--search", q, "--json", "number,title,state"]) ?? []) {
+    const lists = go
+      ? [
+          ["--limit", String(settings.triage.recent_candidates)],
+          ...duplicateQueries(issue.title, issue.body).map((q) => ["--limit", "8", "--search", q]),
+        ]
+      : [];
+    for (const extra of lists) {
+      for (const c of ghJson(["issue", "list", "--repo", repo, "--state", "all", ...extra, "--json", "number,title,state"]) ?? []) {
         if (!seen.has(c.number)) seen.set(c.number, c);
       }
     }

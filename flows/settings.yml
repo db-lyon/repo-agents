@@ -52,6 +52,8 @@ settings:
     max_turns: 40
     # Leave issues filed by owners, members and collaborators alone.
     skip_maintainers: false
+    # Most recent issues always offered as duplicate candidates, beside the searches.
+    recent_candidates: 20
     # Accepted bugs and requests get the resolve label automatically.
     auto_resolve: false
     auto_resolve_kinds: [bug]
