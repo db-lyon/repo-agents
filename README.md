@@ -15,6 +15,15 @@ echo "$RUNNER_TEMP/repo-agents/node_modules/.bin" >> "$GITHUB_PATH"
 
 `bin/repo-agents.mjs` is deprecated. It is kept for checkouts that still call it by path and is not shipped in the package. Use the `repo-agents` bin.
 
+## Set up a repository
+
+```bash
+npx github:repo-agents/core install --repo owner/name --dry-run   # see what it would do
+npx github:repo-agents/core install --repo owner/name
+```
+
+It creates the labels the stages use, lets GitHub Actions approve pull requests, turns on auto-merge where the plan allows it, and opens a pull request adding `.github/workflows/repo-agents.yml` (the caller) and `.github/repo-agents.yml` (a starter config). It lists the secrets still missing: `ANTHROPIC_API_KEY`, and optionally `REPO_AGENTS_TOKEN`. Running it again changes only what is still missing.
+
 ## CLI
 
 Run from the project root.
@@ -24,6 +33,7 @@ repo-agents run <flow> [--param key=value]* [--plan]
 repo-agents preflight <flow> [--param key=value]*
 repo-agents flows
 repo-agents settings
+repo-agents install --repo owner/name [--dry-run]
 repo-agents help
 ```
 
