@@ -76,6 +76,8 @@ export function planMerged({ pr, issues, settings }) {
   const lines = [];
   for (const i of issues) {
     if (!i || i.isPullRequest || i.number === pr.number) continue;
+    // The fix has merged, so no agent is working on it any more.
+    const working = (i.labels ?? []).filter((l) => l === L.in_progress || l === L.resolve);
     if (i.state !== "open") {
       lines.push(`- #${i.number} already closed. ${i.title}`);
       continue;
@@ -83,7 +85,7 @@ export function planMerged({ pr, issues, settings }) {
     if (onMerge) {
       items.push({
         number: i.number,
-        remove: (i.labels ?? []).includes(L.fixed_pending) ? [L.fixed_pending] : [],
+        remove: [...working, ...((i.labels ?? []).includes(L.fixed_pending) ? [L.fixed_pending] : [])],
         comment: mergedComment(pr.number, pr.mergeCommit),
         marker: CLOSE_MARKER,
         close: "completed",
@@ -91,9 +93,10 @@ export function planMerged({ pr, issues, settings }) {
       });
       lines.push(`- #${i.number} closed. ${i.title}`);
     } else if ((i.labels ?? []).includes(L.fixed_pending)) {
+      if (working.length) items.push({ number: i.number, remove: working });
       lines.push(`- #${i.number} already labeled ${L.fixed_pending}. ${i.title}`);
     } else {
-      items.push({ number: i.number, add: [L.fixed_pending] });
+      items.push({ number: i.number, add: [L.fixed_pending], ...(working.length ? { remove: working } : {}) });
       lines.push(`- #${i.number} labeled ${L.fixed_pending}. ${i.title}`);
     }
   }

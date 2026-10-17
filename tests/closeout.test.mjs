@@ -159,3 +159,13 @@ describe("closeout.released", () => {
     expect(pf.checks.filter((c) => c.triggered).map((c) => c.message)).toEqual(["closeout is disabled in settings"]);
   });
 });
+
+describe("closeout planMerged working labels", () => {
+  const pr = { number: 20, mergeCommit: "abcdef1234567890" };
+  it("drops the agent-working and resolve labels once the fix merges", () => {
+    const p = planMerged({ pr, issues: [issue(3, { labels: ["agent-working", "bug"] })], settings: cfg({ closeout: { close_on: "release" } }) });
+    expect(p.items).toEqual([{ number: 3, add: ["fixed-pending-release"], remove: ["agent-working"] }]);
+    const q = planMerged({ pr, issues: [issue(3, { labels: ["agent-working", "resolve"] })], settings: cfg() });
+    expect(q.items[0].remove).toEqual(["agent-working", "resolve"]);
+  });
+});
