@@ -9,7 +9,7 @@ import path from "node:path";
 import { BaseTask } from "@db-lyon/flowkit";
 import { workDir } from "../lib/config.mjs";
 import { defaultBranch, dispatch, gh, ghJson, releases, repoSlug, run, tryRun } from "../lib/github.mjs";
-import { isPrerelease, nextVersion, readVersion, shippableCommits, writeVersion } from "../stages/release/version.mjs";
+import { isPrerelease, releaseVersion, readVersion, shippableCommits, writeVersion } from "../stages/release/version.mjs";
 import { decidePlan, pendingDraft, workflowCheck } from "../stages/release/plan.mjs";
 import { buildBody, checkDecision, contributors, decisionSchema } from "../stages/release/body.mjs";
 
@@ -54,7 +54,7 @@ export class ReleaseFacts extends BaseTask {
     const all = releases(repo, { drafts: true });
     const gitTags = (tryRun("git", ["tag", "--list", "v*"]) ?? "").split("\n").filter(Boolean);
     const current = readVersion(settings, root);
-    const version = nextVersion(current, r, [...gitTags, ...all.map((x) => x.tagName)]);
+    const version = releaseVersion(current, r, [...gitTags, ...all.map((x) => x.tagName)]);
     const prev = previousTag(!isPrerelease(version));
     const workflows = r.required_workflows.map((name) => workflowCheck(
       name,
@@ -247,11 +247,15 @@ export class ReleaseBump extends BaseTask {
     const { settings, root } = this.ctx;
     const { version } = this.options;
     writeVersion(settings, root, version);
+    // A first release, or a version bumped by hand, is already in place.
+    if (!run("git", ["status", "--porcelain", "--untracked-files=no"])) {
+      return { success: true, data: { sha: run("git", ["rev-parse", "HEAD"]), bumped: false } };
+    }
     run("git", [
       "-c", "core.hooksPath=/dev/null", "-c", `user.name=${BOT_NAME}`, "-c", `user.email=${BOT_EMAIL}`,
       "commit", "--no-verify", "-a", "-m", settings.release.bump_commit_message.replace(/\{version\}/g, version),
     ]);
-    return { success: true, data: { sha: run("git", ["rev-parse", "HEAD"]) } };
+    return { success: true, data: { sha: run("git", ["rev-parse", "HEAD"]), bumped: true } };
   }
 }
 

@@ -159,3 +159,12 @@ export function compareVersions(a, b) {
   }
   return 0;
 }
+
+/**
+ * The version to release: the current one when it has never been tagged or
+ * released (a first release, or a bump made by hand), else the next one.
+ */
+export function releaseVersion(current, opts, existingTags = []) {
+  const taken = new Set(existingTags.map((t) => String(t).replace(/^v/, "")));
+  return taken.has(String(current)) ? nextVersion(current, opts, existingTags) : String(current);
+}

@@ -220,3 +220,12 @@ describe("release flows", () => {
     }
   });
 });
+
+describe("releaseVersion", () => {
+  it("releases the current version when it was never tagged", async () => {
+    const { releaseVersion } = await import("../stages/release/version.mjs");
+    expect(releaseVersion("0.1.0", { bump: "patch" }, [])).toBe("0.1.0");
+    expect(releaseVersion("0.1.0", { bump: "patch" }, ["v0.1.0"])).toBe("0.1.1");
+    expect(releaseVersion("1.4.8-beta.1", { bump: "prerelease", preid: "beta" }, ["v1.4.8-beta.1"])).toBe("1.4.8-beta.2");
+  });
+});
